@@ -1,8 +1,8 @@
 // =============================================================================
 // Orders Routes
-// POST /api/orders        — Tạo đơn hàng mới
-// GET  /api/orders/:id    — Lấy chi tiết đơn hàng (polling từ frontend)
-// PATCH /api/orders/:id/ship — Admin đánh dấu đã giao (protected)
+// POST  /api/orders           — Tạo đơn hàng mới + sinh VietQR URL
+// GET   /api/orders/:id       — Lấy chi tiết đơn (polling từ frontend)
+// PATCH /api/orders/:id/ship  — Admin đánh dấu đã giao
 // =============================================================================
 
 import { Router, type IRouter, type Request, type Response } from "express";
@@ -13,6 +13,12 @@ import { telegramAdminAuthMiddleware } from "../middlewares/telegramAdminAuth.js
 import { NotFoundError, ValidationError } from "../middlewares/errorHandler.js";
 import { getConfig } from "../config/index.js";
 import { logger } from "../lib/logger.js";
+import {
+  generateOrderCode,
+  buildVietQrUrl,
+  getOrderById,
+  markOrderShipped,
+} from "../services/orderService.js";
 import type {
   ApiResponse,
   CreateOrderRequest,
@@ -27,10 +33,9 @@ const router: IRouter = Router();
 // ─────────────────────────────────────────────
 // Zod schemas
 // ─────────────────────────────────────────────
-
 const createOrderSchema = z.object({
-  product_id: z.string().uuid("product_id phải là UUID hợp lệ"),
-  quantity: z.number().int().min(1, "Số lượng tối thiểu là 1").max(100),
+  product_id: z.string().min(1, "product_id là bắt buộc"),
+  quantity: z.number().int().min(1, "Số lượng tối thiểu là 1").max(100).default(1),
   customer_name: z.string().min(1).max(255).optional(),
   customer_email: z.string().email("Email không hợp lệ").optional(),
   customer_phone: z
@@ -39,40 +44,6 @@ const createOrderSchema = z.object({
     .optional(),
   customer_note: z.string().max(500).optional(),
 });
-
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
-
-/**
- * Sinh order_code duy nhất dạng: ORD + timestamp_base36 + random 4 ký tự
- * Ví dụ: ORDLKZM4A8X2
- */
-function generateOrderCode(): string {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `ORD${ts}${rand}`;
-}
-
-/**
- * Sinh VietQR URL dạng img.vietqr.io
- * Không cần thư viện, không cần Canvas — pure URL template.
- */
-function buildVietQrUrl(params: {
-  bankId: string;
-  accountNo: string;
-  amount: number;
-  orderCode: string;
-  accountName: string;
-}): string {
-  const { bankId, accountNo, amount, orderCode, accountName } = params;
-  const encodedContent = encodeURIComponent(orderCode);
-  const encodedName = encodeURIComponent(accountName);
-  return (
-    `https://img.vietqr.io/image/${bankId}-${accountNo}-compact2.png` +
-    `?amount=${amount}&addInfo=${encodedContent}&accountName=${encodedName}`
-  );
-}
 
 // ─────────────────────────────────────────────
 // POST /api/orders
@@ -113,8 +84,8 @@ router.post(
     const totalAmount = typedProduct.price * qty;
 
     // 4. Sinh order_code duy nhất (retry nếu trùng, tối đa 3 lần)
-    let orderCode = "";
     let order: Order | null = null;
+    let orderCode = "";
 
     for (let attempt = 0; attempt < 3; attempt++) {
       orderCode = generateOrderCode();
@@ -138,14 +109,8 @@ router.post(
 
       if (insertError) {
         // Unique violation on order_code → retry
-        if (
-          insertError.code === "23505" &&
-          insertError.message.includes("order_code")
-        ) {
-          logger.warn(
-            { attempt, orderCode },
-            "[Orders] order_code collision, retrying",
-          );
+        if (insertError.code === "23505" && insertError.message.includes("order_code")) {
+          logger.warn({ attempt, orderCode }, "[Orders] order_code collision, retrying");
           continue;
         }
         throw insertError;
@@ -156,7 +121,7 @@ router.post(
     }
 
     if (!order) {
-      throw new Error("Failed to generate unique order_code after 3 attempts");
+      throw new Error("Không thể tạo order_code duy nhất sau 3 lần thử");
     }
 
     // 5. Sinh VietQR URL
@@ -196,69 +161,42 @@ router.post(
 // ─────────────────────────────────────────────
 router.get("/:id", async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
-  const supabase = getSupabaseClient();
 
-  const { data, error } = await supabase
-    .from("v_orders_detail")
-    .select("*")
-    .eq("order_id", id)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) throw new NotFoundError("Order");
+  const orderDetail = await getOrderById(id);
+  if (!orderDetail) throw new NotFoundError("Order");
 
   const response: ApiResponse<OrderDetail> = {
     success: true,
-    data: data as OrderDetail,
+    data: orderDetail,
   };
 
   res.json(response);
 });
 
 // ─────────────────────────────────────────────
-// PATCH /api/orders/:id/ship
-// Admin đánh dấu đã giao — chỉ dùng từ Telegram Bot inline button qua API
+// PATCH /api/orders/:id/ship  — Admin only
 // ─────────────────────────────────────────────
 router.patch(
   "/:id/ship",
   telegramAdminAuthMiddleware,
   async (req: Request, res: Response) => {
     const { id } = req.params as { id: string };
-    const supabase = getSupabaseClient();
 
-    // Kiểm tra đơn tồn tại và đang ở trạng thái paid
-    const { data: existing, error: fetchError } = await supabase
-      .from("orders")
-      .select("id, status")
-      .eq("id", id)
-      .maybeSingle();
+    const updated = await markOrderShipped(id);
 
-    if (fetchError) throw fetchError;
-    if (!existing) throw new NotFoundError("Order");
-
-    const existingOrder = existing as Pick<Order, "id" | "status">;
-
-    if (existingOrder.status !== "paid") {
+    if (!updated) {
+      // markOrderShipped trả null nếu đơn không tồn tại hoặc không ở trạng thái paid
+      const existing = await getOrderById(id);
+      if (!existing) throw new NotFoundError("Order");
       throw new ValidationError(
-        `Không thể đánh dấu đã giao: đơn hàng đang ở trạng thái "${existingOrder.status}"`,
+        `Không thể đánh dấu đã giao: đơn đang ở trạng thái "${existing.order_status}"`,
       );
     }
 
-    const { data: updated, error: updateError } = await supabase
-      .from("orders")
-      .update({ status: "shipped", shipped_at: new Date().toISOString() })
-      .eq("id", id)
-      .select()
-      .single();
+    const adminChatId = (req as Request & { adminChatId: number }).adminChatId;
+    logger.info({ orderId: id, adminChatId }, "[Orders] Order marked as shipped");
 
-    if (updateError) throw updateError;
-
-    logger.info(
-      { orderId: id, adminChatId: (req as Request & { adminChatId: number }).adminChatId },
-      "[Orders] Order marked as shipped",
-    );
-
-    res.json({ success: true, data: updated as Order });
+    res.json({ success: true, data: updated });
   },
 );
 

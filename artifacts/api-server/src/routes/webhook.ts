@@ -3,11 +3,11 @@
 // POST /api/webhook/sepay — Tiếp nhận biến động số dư từ SePay
 //
 // Luồng xử lý:
-//   1. sePayAuthMiddleware kiểm tra Authorization: Apikey <token>
-//   2. Validate payload
+//   1. sePayAuthMiddleware: kiểm tra Authorization: Apikey <token>
+//   2. validateRequest: Zod validation payload
 //   3. Gọi Supabase RPC process_sepay_webhook (atomic + idempotent)
-//   4. Nếu matched → gọi Telegram Bot gửi notification (async, không block response)
-//   5. Trả về 200 OK nhanh nhất có thể (SePay timeout ~30s)
+//   4. Nếu matched → notifyOrderPaid() non-blocking (Telegram Phase 4)
+//   5. Trả về 200 OK ngay — SePay timeout ~30s, không nên giữ connection
 // =============================================================================
 
 import { Router, type IRouter, type Request, type Response } from "express";
@@ -21,7 +21,7 @@ import type { SePayWebhookPayload, WebhookProcessResult } from "../types/index.j
 const router: IRouter = Router();
 
 // ─────────────────────────────────────────────
-// Zod validation cho SePay payload
+// Zod validation — khớp với SePayWebhookPayload
 // ─────────────────────────────────────────────
 const sePayWebhookSchema = z.object({
   id: z.number().int().positive("Transaction ID phải là số nguyên dương"),
@@ -54,36 +54,44 @@ router.post(
       {
         txId: payload.id,
         amountIn: payload.amountIn,
-        content: payload.content,
+        amountOut: payload.amountOut,
+        content: payload.content?.substring(0, 60),
         bank: payload.bankBrandName,
+        account: payload.accountNumber,
       },
-      "[Webhook] SePay event received",
+      "[Webhook/SePay] Event received",
     );
 
-    // Gọi Stored Procedure nguyên tử
+    // ── Gọi Stored Procedure nguyên tử ──────────────────────────────────────
     const { data: rpcData, error: rpcError } = await supabase.rpc(
       "process_sepay_webhook",
       {
         p_sepay_transaction_id: payload.id,
-        p_bank_brand_name: payload.bankBrandName,
-        p_account_number: payload.accountNumber,
-        p_transaction_date: new Date(payload.transactionDate).toISOString(),
-        p_amount_in: payload.amountIn,
-        p_amount_out: payload.amountOut,
-        p_accumulated: payload.accumulated ?? null,
-        p_transaction_content: payload.content,
-        p_reference_code: payload.referenceCode ?? null,
-        p_body: req.body as Record<string, unknown>,
+        p_bank_brand_name:      payload.bankBrandName,
+        p_account_number:       payload.accountNumber,
+        p_transaction_date:     (() => {
+          // SePay gửi dạng "2024-01-15 10:30:00" (không có timezone)
+          // Parse và convert sang ISO 8601
+          const raw = payload.transactionDate;
+          const d = new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
+          return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+        })(),
+        p_amount_in:            payload.amountIn ?? 0,
+        p_amount_out:           payload.amountOut ?? 0,
+        p_accumulated:          payload.accumulated ?? null,
+        p_transaction_content:  payload.content ?? "",
+        p_reference_code:       payload.referenceCode ?? null,
+        p_body:                 req.body as Record<string, unknown>,
       },
     );
 
     if (rpcError) {
       logger.error(
         { err: rpcError, txId: payload.id },
-        "[Webhook] RPC process_sepay_webhook error",
+        "[Webhook/SePay] RPC process_sepay_webhook error",
       );
-      // Trả 200 để SePay không retry liên tục, nhưng log lỗi
-      res.status(200).json({ success: false, message: "Processing error logged" });
+      // Trả 200 để SePay không retry liên tục, nhưng log lỗi để xử lý thủ công
+      res.status(200).json({ success: false, message: "Processing error — logged for review" });
       return;
     }
 
@@ -91,46 +99,44 @@ router.post(
 
     logger.info(
       {
-        status: result.status,
-        orderId: result.order_id,
-        txId: payload.id,
+        txId:     payload.id,
+        status:   result.status,
+        orderId:  result.order_id,
+        matched:  result.success,
       },
-      `[Webhook] Processed: ${result.status}`,
+      `[Webhook/SePay] Processed: ${result.status}`,
     );
 
-    // Nếu khớp đơn → trigger Telegram notification (non-blocking)
-    // Telegram bot module sẽ được import ở Phase 4, dùng dynamic import để tránh circular
+    // ── Trigger Telegram notification (non-blocking) ─────────────────────────
     if (result.success && result.status === "matched" && result.order_id) {
+      // setImmediate để trả response ngay, notification gửi sau
       setImmediate(async () => {
         try {
-          // Dynamic import để tránh circular dependency và cho phép khởi động
-          // Telegram bot độc lập với webhook handler
-          const { notifyOrderPaid } = await import(
-            "../services/telegramNotifier.js"
-          );
+          const { notifyOrderPaid } = await import("../services/telegramNotifier.js");
           await notifyOrderPaid({
-            orderId: result.order_id!,
-            orderCode: result.order_code ?? "",
-            totalAmount: result.total_amount ?? 0,
-            amountReceived: result.amount_received ?? 0,
-            customerName: result.customer_name ?? null,
-            customerEmail: result.customer_email ?? null,
+            orderId:           result.order_id!,
+            orderCode:         result.order_code         ?? "",
+            totalAmount:       result.total_amount        ?? 0,
+            amountReceived:    result.amount_received     ?? 0,
+            customerName:      result.customer_name       ?? null,
+            customerEmail:     result.customer_email      ?? null,
             telegramMessageId: result.telegram_message_id ?? null,
           });
         } catch (err) {
-          // Lỗi notification không ảnh hưởng đến flow chính
+          // Lỗi notification KHÔNG được crash process
           logger.error(
             { err, orderId: result.order_id },
-            "[Webhook] Telegram notification failed",
+            "[Webhook/SePay] Telegram notification failed (non-fatal)",
           );
         }
       });
     }
 
-    // SePay chỉ cần nhận 200 OK
+    // ── Trả về kết quả cho SePay ─────────────────────────────────────────────
+    // SePay chỉ cần 200 OK — bất kể matched/unmatched/duplicate
     res.status(200).json({
       success: result.success,
-      status: result.status,
+      status:  result.status,
       message: result.message,
       ...(result.order_id ? { order_id: result.order_id } : {}),
     });

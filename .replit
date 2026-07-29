@@ -18,3 +18,17 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+ADMIN_TELEGRAM_CHAT_IDS = "0"
+BANK_ACCOUNT_NAME = "NGUYEN VAN A"
+BANK_ACCOUNT_NO = "0123456789"
+BANK_ID = "MB"
+CLOUDINARY_UPLOAD_FOLDER = "payment_reports"
+CRON_AUTO_CANCEL_EXPR = "* * * * *"
+CRON_ENABLED = "true"
+FRONTEND_URL = "http://localhost:3000"
+LOG_LEVEL = "info"
+NODE_ENV = "development"
