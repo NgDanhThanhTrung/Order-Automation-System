@@ -9,6 +9,7 @@ import { logger } from "./lib/logger.js";
 import { getConfig } from "./config/index.js";
 import { initCloudinary } from "./lib/cloudinaryClient.js";
 import { startAutoCancelCron, stopAutoCancelCron } from "./jobs/autoCancelCron.js";
+import { bootstrapTelegramBot, stopTelegramBot } from "./bot/index.js";
 
 // ─────────────────────────────────────────────
 // Validate config TRƯỚC KHI làm bất cứ điều gì
@@ -42,6 +43,11 @@ const server = app.listen(config.port, () => {
   logger.info("  GET  /api/reports  (admin)");
   logger.info("  GET  /api/reports/orders  (admin)");
   logger.info("  GET  /api/reports/order/:orderId  (admin)");
+  logger.info("  PATCH /api/orders/:id/ship  (admin)");
+
+  // 3. Telegram bot — start AFTER server is ready
+  //    (so bot errors never block HTTP from coming up)
+  bootstrapTelegramBot();
 });
 
 server.on("error", (err) => {
@@ -69,8 +75,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // 2. Dừng cron job
   stopAutoCancelCron();
 
-  // 3. Phase 4: dừng Telegram bot polling (sẽ thêm sau)
-  // await stopTelegramBot();
+  // 3. Dừng Telegram bot polling
+  await stopTelegramBot();
 
   // Cho 5 giây để requests đang xử lý hoàn thành
   await new Promise((resolve) => setTimeout(resolve, 5000));
