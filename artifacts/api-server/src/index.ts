@@ -10,6 +10,7 @@ import { getConfig } from "./config/index.js";
 import { initCloudinary } from "./lib/cloudinaryClient.js";
 import { startAutoCancelCron, stopAutoCancelCron } from "./jobs/autoCancelCron.js";
 import { bootstrapTelegramBot, stopTelegramBot } from "./bot/index.js";
+import { getWebhookRetryQueue, resetWebhookRetryQueue } from "./lib/webhookRetryQueue.js";
 
 // ─────────────────────────────────────────────
 // Validate config TRƯỚC KHI làm bất cứ điều gì
@@ -25,7 +26,11 @@ const config = getConfig();
 initCloudinary();
 logger.info("[Bootstrap] Cloudinary initialized");
 
-// 2. Auto-cancel cron job
+// 2. Webhook retry queue
+getWebhookRetryQueue();
+logger.info("[Bootstrap] Webhook retry queue initialized");
+
+// 3. Auto-cancel cron job
 startAutoCancelCron();
 
 // ─────────────────────────────────────────────
@@ -34,12 +39,18 @@ startAutoCancelCron();
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port, env: config.nodeEnv }, "[Bootstrap] Server listening");
   logger.info("[Bootstrap] Available routes:");
+  logger.info("  GET  /api/docs");
   logger.info("  GET  /api/healthz");
+  logger.info("  GET  /api/healthz/detailed");
+  logger.info("  GET  /api/csrf-token");
   logger.info("  GET  /api/products");
   logger.info("  GET  /api/products/:id");
   logger.info("  POST /api/orders");
   logger.info("  GET  /api/orders/:id");
-  logger.info("  POST /api/webhook/sepay");
+  logger.info("  POST /api/webhook/sepay (SePay webhook - protected)");
+  logger.info("  POST /api/webhook/test (Test webhook - no auth)");
+  logger.info("  GET  /api/webhook/test/info (Test webhook info)");
+  logger.info("  GET  /api/webhook/retry-status  (admin)");
   logger.info("  GET  /api/reports  (admin)");
   logger.info("  GET  /api/reports/orders  (admin)");
   logger.info("  GET  /api/reports/order/:orderId  (admin)");
@@ -75,7 +86,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // 2. Dừng cron job
   stopAutoCancelCron();
 
-  // 3. Dừng Telegram bot polling
+  // 3. Dừng webhook retry queue
+  const retryQueue = getWebhookRetryQueue();
+  retryQueue.shutdown();
+
+  // 4. Dừng Telegram bot polling
   await stopTelegramBot();
 
   // Cho 5 giây để requests đang xử lý hoàn thành

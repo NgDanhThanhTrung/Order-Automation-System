@@ -5,6 +5,13 @@
 // Tất cả bot logic (commands, callbacks, handlers) đăng ký vào instance này.
 // =============================================================================
 
+// Fix: Telegraf@4 + node-fetch@2 + Node.js 18+ AbortSignal incompatibility.
+// node-fetch@2 checks `signal instanceof AbortSignal` using its own polyfill class,
+// but Telegraf creates AbortController from the native Node.js global (different class).
+// Overriding globalThis.AbortController with the polyfill makes both sides use the same class.
+import { AbortController as PolyfillAbortController } from "abort-controller";
+(globalThis as unknown as Record<string, unknown>).AbortController = PolyfillAbortController;
+
 import { Telegraf, type Context } from "telegraf";
 import { getConfig } from "../config/index.js";
 import { logger } from "./logger.js";
@@ -35,6 +42,14 @@ export function getTelegramBot(): Telegraf {
   if (!_bot) {
     throw new Error("[TelegramBot] Bot not initialized — call initTelegramBot() first");
   }
+  return _bot;
+}
+
+/**
+ * Lấy bot instance đã khởi tạo (return null nếu chưa init).
+ * Dùng cho health check.
+ */
+export function getTelegramBotSafe(): Telegraf | null {
   return _bot;
 }
 

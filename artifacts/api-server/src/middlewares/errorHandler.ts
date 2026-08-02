@@ -6,6 +6,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { logger } from "../lib/logger.js";
+import { getRequestId } from "./requestId.js";
 
 // Extend Error để hỗ trợ HTTP status code
 export class AppError extends Error {
@@ -64,14 +65,15 @@ export function globalErrorHandler(
 ): void {
   // AppError: lỗi có chủ đích, biết HTTP status
   if (err instanceof AppError) {
+    const requestId = getRequestId(req);
     if (err.statusCode >= 500) {
       logger.error(
-        { err, path: req.path, method: req.method },
+        { err, path: req.path, method: req.method, requestId },
         "[ErrorHandler] Server error",
       );
     } else {
       logger.warn(
-        { statusCode: err.statusCode, message: err.message, path: req.path },
+        { statusCode: err.statusCode, message: err.message, path: req.path, requestId },
         "[ErrorHandler] Client error",
       );
     }
@@ -80,17 +82,20 @@ export function globalErrorHandler(
       success: false,
       error: err.code ?? "ERROR",
       message: err.message,
+      requestId,
     });
     return;
   }
 
   // Zod validation error (từ express middleware hoặc manual parse)
   if (err instanceof Error && err.name === "ZodError") {
-    logger.warn({ err, path: req.path }, "[ErrorHandler] Validation error");
+    const requestId = getRequestId(req);
+    logger.warn({ err, path: req.path, requestId }, "[ErrorHandler] Validation error");
     res.status(400).json({
       success: false,
       error: "VALIDATION_ERROR",
       message: "Invalid request data",
+      requestId,
       // @ts-expect-error ZodError has .issues
       details: (err as { issues: unknown[] }).issues,
     });
@@ -99,17 +104,20 @@ export function globalErrorHandler(
 
   // SyntaxError từ JSON.parse (malformed JSON body)
   if (err instanceof SyntaxError && "status" in err) {
+    const requestId = getRequestId(req);
     res.status(400).json({
       success: false,
       error: "INVALID_JSON",
       message: "Invalid JSON in request body",
+      requestId,
     });
     return;
   }
 
   // Unknown errors
+  const requestId = getRequestId(req);
   logger.error(
-    { err, path: req.path, method: req.method },
+    { err, path: req.path, method: req.method, requestId },
     "[ErrorHandler] Unhandled error",
   );
 
@@ -119,6 +127,7 @@ export function globalErrorHandler(
     success: false,
     error: "INTERNAL_SERVER_ERROR",
     message: "An unexpected error occurred",
+    requestId,
     ...(isDev && err instanceof Error ? { stack: err.stack } : {}),
   });
 }

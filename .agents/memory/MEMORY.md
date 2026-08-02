@@ -1,0 +1,2 @@
+- [Telegraf AbortSignal fix](telegraf-abort-signal.md) — Telegraf@4+node-fetch@2+Node18 crash: externalize abort-controller in build.mjs so bundle and node-fetch share the same class instance.
+- [Supabase migration](supabase-migration.md) — Schema/RPCs/RLS live in supabase/migrations/00001_init_schema.sql; must be run manually in Supabase SQL Editor before the app works.

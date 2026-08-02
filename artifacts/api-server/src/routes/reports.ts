@@ -11,12 +11,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { telegramAdminAuthMiddleware } from "../middlewares/telegramAdminAuth.js";
 import { NotFoundError } from "../middlewares/errorHandler.js";
+import { adminRateLimiter } from "../middlewares/rateLimiter.js";
 import type { ApiResponse, PaymentReport, OrderDetail } from "../types/index.js";
 
 const router: IRouter = Router();
 
 // Tất cả report routes đều yêu cầu admin auth
 router.use(telegramAdminAuthMiddleware);
+router.use(adminRateLimiter);
 
 // ─────────────────────────────────────────────
 // GET /api/reports

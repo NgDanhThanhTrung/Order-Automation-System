@@ -14,8 +14,13 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { sePayAuthMiddleware } from "../middlewares/sePayAuth.js";
+import { telegramAdminAuthMiddleware } from "../middlewares/telegramAdminAuth.js";
 import { validateRequest } from "../middlewares/requestValidator.js";
 import { logger } from "../lib/logger.js";
+import { webhookRateLimiter } from "../middlewares/rateLimiter.js";
+import { sanitizeBody } from "../middlewares/inputSanitizer.js";
+import { getWebhookRetryQueue } from "../lib/webhookRetryQueue.js";
+import { parseSePayDateWithFallback, formatDateToISO } from "../lib/dateParser.js";
 import type { SePayWebhookPayload, WebhookProcessResult } from "../types/index.js";
 
 const router: IRouter = Router();
@@ -44,11 +49,17 @@ const sePayWebhookSchema = z.object({
 // ─────────────────────────────────────────────
 router.post(
   "/sepay",
+  webhookRateLimiter,
   sePayAuthMiddleware,
   validateRequest(sePayWebhookSchema),
   async (req: Request, res: Response) => {
     const payload = req.body as SePayWebhookPayload;
     const supabase = getSupabaseClient();
+
+    // Sanitize transaction content to prevent XSS in admin dashboard
+    if (payload.content) {
+      payload.content = payload.content.trim().substring(0, 255);
+    }
 
     logger.info(
       {
@@ -63,19 +74,27 @@ router.post(
     );
 
     // ── Gọi Stored Procedure nguyên tử ──────────────────────────────────────
+    // Safe date parsing with validation
+    let transactionDateISO: string;
+    try {
+      const parsedDate = parseSePayDateWithFallback(payload.transactionDate);
+      transactionDateISO = formatDateToISO(parsedDate);
+    } catch (dateError) {
+      logger.error(
+        { err: dateError, txId: payload.id, dateString: payload.transactionDate },
+        "[Webhook/SePay] Invalid transaction date format",
+      );
+      // Use current time as fallback but log the issue
+      transactionDateISO = new Date().toISOString();
+    }
+
     const { data: rpcData, error: rpcError } = await supabase.rpc(
       "process_sepay_webhook",
       {
         p_sepay_transaction_id: payload.id,
         p_bank_brand_name:      payload.bankBrandName,
         p_account_number:       payload.accountNumber,
-        p_transaction_date:     (() => {
-          // SePay gửi dạng "2024-01-15 10:30:00" (không có timezone)
-          // Parse và convert sang ISO 8601
-          const raw = payload.transactionDate;
-          const d = new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
-          return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
-        })(),
+        p_transaction_date:     transactionDateISO,
         p_amount_in:            payload.amountIn ?? 0,
         p_amount_out:           payload.amountOut ?? 0,
         p_accumulated:          payload.accumulated ?? null,
@@ -90,8 +109,29 @@ router.post(
         { err: rpcError, txId: payload.id },
         "[Webhook/SePay] RPC process_sepay_webhook error",
       );
-      // Trả 200 để SePay không retry liên tục, nhưng log lỗi để xử lý thủ công
-      res.status(200).json({ success: false, message: "Processing error — logged for review" });
+      
+      // Add to retry queue for transient failures
+      const retryQueue = getWebhookRetryQueue();
+      const isTransient = 
+        rpcError.code === '503' || // Service unavailable
+        rpcError.code === '504' || // Gateway timeout
+        rpcError.message?.toLowerCase().includes('timeout') ||
+        rpcError.message?.toLowerCase().includes('connection');
+      
+      if (isTransient) {
+        retryQueue.enqueue(String(payload.id), req.body, rpcError.message);
+        res.status(202).json({ 
+          success: false, 
+          message: "Processing error - queued for retry",
+          retryId: String(payload.id)
+        });
+      } else {
+        // For non-transient errors, return 200 to prevent SePay retry
+        res.status(200).json({ 
+          success: false, 
+          message: "Processing error — logged for manual review" 
+        });
+      }
       return;
     }
 
@@ -142,5 +182,22 @@ router.post(
     });
   },
 );
+
+// ─────────────────────────────────────────────
+// GET /api/webhook/retry-status  — Admin only
+// ─────────────────────────────────────────────
+router.get("/retry-status", telegramAdminAuthMiddleware, async (_req: Request, res: Response) => {
+  const retryQueue = getWebhookRetryQueue();
+  const status = retryQueue.getStatus();
+  
+  res.json({
+    success: true,
+    data: {
+      pendingWebhooks: status.pending,
+      processing: status.processing,
+      maxRetries: 3,
+    },
+  });
+});
 
 export default router;

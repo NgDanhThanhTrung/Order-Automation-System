@@ -1,5 +1,6 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  headers?: HeadersInit;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;

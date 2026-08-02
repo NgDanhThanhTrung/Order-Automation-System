@@ -12,6 +12,7 @@
 import type { Context } from "telegraf";
 import { getTelegramBot } from "../lib/telegramBot.js";
 import { uploadBufferToCloudinary, savePaymentReport } from "../lib/cloudinaryUploader.js";
+import { adminGuard } from "./adminGuard.js";
 import { logger } from "../lib/logger.js";
 
 /**
@@ -21,7 +22,7 @@ import { logger } from "../lib/logger.js";
 export function registerPhotoHandler(): void {
   const bot = getTelegramBot();
 
-  bot.on("photo", async (ctx: Context) => {
+  bot.on("photo", adminGuard, async (ctx: Context) => {
     const fromId = ctx.from?.id ?? 0;
 
     try {
@@ -65,18 +66,17 @@ export function registerPhotoHandler(): void {
 
       // Upload lên Cloudinary
       const uploadResult = await uploadBufferToCloudinary(buffer, {
-        filename: `bill_${Date.now()}`,
-        mimetype: "image/jpeg",
+        folder: "payment_reports",
+        tags: ["bill", orderId ? `order:${orderId}` : "manual"],
       });
 
       // Lưu vào payment_reports
       await savePaymentReport({
-        orderId: orderId ?? undefined,
-        transactionId: undefined,
-        billImageUrl: uploadResult.secure_url,
-        cloudinaryPublicId: uploadResult.public_id,
+        orderId: orderId ?? null,
+        transactionId: null,
+        cloudinaryResult: uploadResult,
         uploadedByTelegramId: fromId,
-        note: caption || undefined,
+        note: caption || null,
       });
 
       await ctx.reply(

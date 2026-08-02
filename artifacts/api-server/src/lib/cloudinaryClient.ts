@@ -38,6 +38,9 @@ export function getCloudinary() {
   return cloudinary;
 }
 
+// Export cloudinary instance for direct use
+export { cloudinary };
+
 // Reset cho tests
 export function resetCloudinary(): void {
   _initialized = false;

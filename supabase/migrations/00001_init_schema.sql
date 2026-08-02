@@ -297,41 +297,53 @@ BEGIN
     -- STEP 5a: Tìm thấy đơn khớp → xác nhận thanh toán
     -- --------------------------------------------------------
     IF v_order.id IS NOT NULL THEN
-        -- Cập nhật đơn hàng
-        UPDATE orders
-        SET status          = 'paid',
-            paid_at         = NOW(),
-            payment_content = p_transaction_content,
-            updated_at      = NOW()
-        WHERE id = v_order.id;
+        BEGIN
+            -- Cập nhật đơn hàng (trigger sẽ tự động trừ tồn kho)
+            UPDATE orders
+            SET status          = 'paid',
+                paid_at         = NOW(),
+                payment_content = p_transaction_content,
+                updated_at      = NOW()
+            WHERE id = v_order.id;
 
-        -- Ghi nhận giao dịch
-        INSERT INTO payment_transactions (
-            sepay_transaction_id, order_id, bank_brand_name, account_number,
-            transaction_date, amount_in, amount_out, accumulated,
-            transaction_content, reference_code, body, status
-        ) VALUES (
-            p_sepay_transaction_id, v_order.id, p_bank_brand_name, p_account_number,
-            p_transaction_date, p_amount_in, COALESCE(p_amount_out, 0), p_accumulated,
-            p_transaction_content, p_reference_code, p_body,
-            'matched'
-        ) RETURNING id INTO v_transaction_id;
+            -- Ghi nhận giao dịch
+            INSERT INTO payment_transactions (
+                sepay_transaction_id, order_id, bank_brand_name, account_number,
+                transaction_date, amount_in, amount_out, accumulated,
+                transaction_content, reference_code, body, status
+            ) VALUES (
+                p_sepay_transaction_id, v_order.id, p_bank_brand_name, p_account_number,
+                p_transaction_date, p_amount_in, COALESCE(p_amount_out, 0), p_accumulated,
+                p_transaction_content, p_reference_code, p_body,
+                'matched'
+            ) RETURNING id INTO v_transaction_id;
 
-        v_result := jsonb_build_object(
-            'success',          TRUE,
-            'status',           'matched',
-            'message',          'Order paid successfully',
-            'transaction_id',   v_transaction_id,
-            'order_id',         v_order.id,
-            'order_code',       v_order.order_code,
-            'total_amount',     v_order.total_amount,
-            'amount_received',  p_amount_in,
-            'customer_name',    v_order.customer_name,
-            'customer_email',   v_order.customer_email,
-            'telegram_message_id', v_order.telegram_message_id
-        );
+            v_result := jsonb_build_object(
+                'success',          TRUE,
+                'status',           'matched',
+                'message',          'Order paid successfully',
+                'transaction_id',   v_transaction_id,
+                'order_id',         v_order.id,
+                'order_code',       v_order.order_code,
+                'total_amount',     v_order.total_amount,
+                'amount_received',  p_amount_in,
+                'customer_name',    v_order.customer_name,
+                'customer_email',   v_order.customer_email,
+                'telegram_message_id', v_order.telegram_message_id
+            );
 
-        RETURN v_result;
+            RETURN v_result;
+        EXCEPTION
+            WHEN OTHERS THEN
+                -- Nếu trigger trừ tồn kho fail (insufficient stock)
+                RETURN jsonb_build_object(
+                    'success',  FALSE,
+                    'status',   'error',
+                    'message',  SQLERRM,
+                    'sqlstate', SQLSTATE,
+                    'order_id', v_order.id
+                );
+        END;
     END IF;
 
     -- --------------------------------------------------------
@@ -396,6 +408,9 @@ BEGIN
         RETURNING id
     )
     SELECT COUNT(*) INTO v_cancelled_count FROM cancelled;
+
+    -- Note: Stock restoration is handled by trigger trg_restore_stock_on_cancellation
+    -- which fires automatically when status changes to 'cancelled'
 
     RETURN v_cancelled_count;
 END;

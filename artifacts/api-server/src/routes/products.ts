@@ -7,12 +7,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { NotFoundError } from "../middlewares/errorHandler.js";
+import { readRateLimiter } from "../middlewares/rateLimiter.js";
 import type { ApiResponse, Product } from "../types/index.js";
 
 const router: IRouter = Router();
 
 // GET /api/products
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", readRateLimiter, async (_req: Request, res: Response) => {
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase
@@ -32,7 +33,7 @@ router.get("/", async (_req: Request, res: Response) => {
 });
 
 // GET /api/products/:id
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", readRateLimiter, async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
 
   const supabase = getSupabaseClient();

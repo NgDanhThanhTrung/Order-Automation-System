@@ -28,6 +28,9 @@ async function buildAll() {
     // - uses native modules and loads them dynamically (e.g. sharp)
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
+      // Must be external so the bundled code and node-fetch share the same
+      // AbortController/AbortSignal class instance (fixes Telegraf + node-fetch@2 + Node 18).
+      "abort-controller",
       "*.node",
       "sharp",
       "better-sqlite3",

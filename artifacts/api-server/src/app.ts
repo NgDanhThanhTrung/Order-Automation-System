@@ -9,8 +9,15 @@ import pinoHttp from "pino-http";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 import { notFoundHandler, globalErrorHandler } from "./middlewares/errorHandler.js";
+import { generalRateLimiter } from "./middlewares/rateLimiter.js";
+import { requestIdMiddleware } from "./middlewares/requestId.js";
 
 const app: Express = express();
+
+// ─────────────────────────────────────────────
+// REQUEST ID TRACKING (must be first)
+// ─────────────────────────────────────────────
+app.use(requestIdMiddleware);
 
 // ─────────────────────────────────────────────
 // SECURITY HEADERS
@@ -26,7 +33,7 @@ app.use(
     serializers: {
       req(req) {
         return {
-          id: req.id,
+          id: (req as Request & { requestId: string }).requestId,
           method: req.method,
           url: req.url?.split("?")[0],
         };
@@ -94,6 +101,11 @@ app.use(
   }),
 );
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// ─────────────────────────────────────────────
+// RATE LIMITING
+// ─────────────────────────────────────────────
+app.use(generalRateLimiter);
 
 // ─────────────────────────────────────────────
 // ROUTES

@@ -65,9 +65,10 @@ export function registerBotCommands(): void {
   bot.command("help", adminGuard, async (ctx: Context) => {
     await ctx.reply(
       `*📋 Danh sách lệnh:*\n\n` +
-        `/orders — 5 đơn hàng mới nhất\n` +
-        `/stats  — Doanh thu hôm nay\n` +
-        `/help   — Hiển thị menu này\n\n` +
+        `/orders  — 5 đơn hàng mới nhất\n` +
+        `/stats   — Doanh thu hôm nay\n` +
+        `/report  — Hướng dẫn upload hóa đơn\n` +
+        `/help    — Hiển thị menu này\n\n` +
         `*📸 Upload hóa đơn:*\n` +
         `Gửi ảnh kèm caption là Order ID (UUID)\n` +
         `để gắn hóa đơn vào đơn hàng tương ứng.`,
@@ -115,6 +116,22 @@ export function registerBotCommands(): void {
       logger.error({ err }, "[BotCommands] /orders error");
       await ctx.reply("❌ Lỗi khi lấy danh sách đơn hàng.");
     }
+  });
+
+  // ── /report ─────────────────────────────────────────────────────────────────
+  // Upload bill từ URL hoặc hiện thị hướng dẫn upload
+  bot.command("report", adminGuard, async (ctx: Context) => {
+    await ctx.reply(
+      `*📸 Upload hóa đơn thanh toán:*\n\n` +
+        `Cách 1: Gửi ảnh trực tiếp\n` +
+        `• Gửi ảnh kèm caption là Order ID (UUID)\n` +
+        `• Bot sẽ tự upload lên Cloudinary và lưu vào payment_reports\n\n` +
+        `Cách 2: Sử dụng API\n` +
+        `• POST /api/reports với admin header\n` +
+        `• Xem tài liệu API chi tiết\n\n` +
+        `💡 Order ID dạng: \`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\``,
+      { parse_mode: "Markdown" },
+    );
   });
 
   // ── /stats ───────────────────────────────────────────────────────────────────

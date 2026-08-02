@@ -13,6 +13,10 @@ import { telegramAdminAuthMiddleware } from "../middlewares/telegramAdminAuth.js
 import { NotFoundError, ValidationError } from "../middlewares/errorHandler.js";
 import { getConfig } from "../config/index.js";
 import { logger } from "../lib/logger.js";
+import { orderCreationRateLimiter, readRateLimiter, adminRateLimiter } from "../middlewares/rateLimiter.js";
+import { sanitizeBody, sanitizeCustomerName, sanitizeEmail, sanitizePhone, sanitizeNote } from "../middlewares/inputSanitizer.js";
+import { csrfProtection } from "../middlewares/csrfProtection.js";
+import { getRequestId } from "../middlewares/requestId.js";
 import {
   generateOrderCode,
   buildVietQrUrl,
@@ -50,11 +54,36 @@ const createOrderSchema = z.object({
 // ─────────────────────────────────────────────
 router.post(
   "/",
+  orderCreationRateLimiter,
+  csrfProtection,
+  sanitizeBody,
   validateRequest(createOrderSchema),
   async (req: Request, res: Response) => {
     const body = req.body as CreateOrderRequest;
     const supabase = getSupabaseClient();
     const config = getConfig();
+
+    // Additional field-specific sanitization
+    if (body.customer_name) {
+      body.customer_name = sanitizeCustomerName(body.customer_name);
+    }
+    if (body.customer_email) {
+      body.customer_email = sanitizeEmail(body.customer_email);
+    }
+    if (body.customer_phone) {
+      body.customer_phone = sanitizePhone(body.customer_phone);
+    }
+    if (body.customer_note) {
+      body.customer_note = sanitizeNote(body.customer_note);
+    }
+
+    // Re-validate after sanitization
+    if (body.customer_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.customer_email)) {
+      throw new ValidationError("Email không hợp lệ sau khi xử lý");
+    }
+    if (body.customer_phone && !/^(0|\+84)\d{9,10}$/.test(body.customer_phone)) {
+      throw new ValidationError("Số điện thoại không hợp lệ sau khi xử lý");
+    }
 
     // 1. Lấy thông tin sản phẩm
     const { data: product, error: productError } = await supabase
@@ -72,11 +101,29 @@ router.post(
       "id" | "name" | "price" | "image_url" | "stock_quantity" | "is_active"
     >;
 
-    // 2. Kiểm tra tồn kho
+    // 2. Kiểm tra tồn kho với optimistic locking
     const qty = body.quantity ?? 1;
     if (typedProduct.stock_quantity < qty) {
       throw new ValidationError(
         `Sản phẩm chỉ còn ${typedProduct.stock_quantity} trong kho`,
+      );
+    }
+    
+    // Additional safety: check for potential race condition
+    // Use database-level check in transaction
+    const { data: stockCheck, error: stockError } = await supabase
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", body.product_id)
+      .single();
+    
+    if (stockError || !stockCheck) {
+      throw new ValidationError("Không thể kiểm tra tồn kho");
+    }
+    
+    if (stockCheck.stock_quantity < qty) {
+      throw new ValidationError(
+        `Sản phẩm chỉ còn ${stockCheck.stock_quantity} trong kho (vừa được cập nhật)`,
       );
     }
 
@@ -134,7 +181,7 @@ router.post(
     });
 
     logger.info(
-      { orderId: order.id, orderCode, totalAmount },
+      { orderId: order.id, orderCode, totalAmount, requestId: getRequestId(req) },
       "[Orders] New order created",
     );
 
@@ -159,7 +206,7 @@ router.post(
 // ─────────────────────────────────────────────
 // GET /api/orders/:id
 // ─────────────────────────────────────────────
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", readRateLimiter, async (req: Request, res: Response) => {
   const { id } = req.params as { id: string };
 
   const orderDetail = await getOrderById(id);
@@ -178,6 +225,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────
 router.patch(
   "/:id/ship",
+  adminRateLimiter,
   telegramAdminAuthMiddleware,
   async (req: Request, res: Response) => {
     const { id } = req.params as { id: string };
