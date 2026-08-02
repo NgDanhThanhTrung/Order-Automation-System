@@ -1,0 +1,49 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+    
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'pnpm'
+    
+    - name: Install dependencies
+      run: pnpm install
+    
+    - name: Type check backend
+      run: cd artifacts/api-server && pnpm run typecheck
+    
+    - name: Type check frontend
+      run: cd artifacts/storefront && pnpm run typecheck
+    
+    - name: Build backend
+      run: cd artifacts/api-server && pnpm run build
+    
+    - name: Build frontend
+      run: cd artifacts/storefront && pnpm run build
+    
+    - name: Run tests (if available)
+      run: pnpm test
+      continue-on-error: true

@@ -1,0 +1,23 @@
+# Code Owners for Order Automation System
+
+# Default owner for all files
+* @NgDanhThanhTrung
+
+# Backend specific
+artifacts/api-server/** @NgDanhThanhTrung
+
+# Frontend specific
+artifacts/storefront/** @NgDanhThanhTrung
+
+# Database
+supabase/** @NgDanhThanhTrung
+
+# Documentation
+*.md @NgDanhThanhTrung
+docs/** @NgDanhThanhTrung
+
+# Configuration
+.github/** @NgDanhThanhTrung
+*.json @NgDanhThanhTrung
+*.yaml @NgDanhThanhTrung
+*.yml @NgDanhThanhTrung
