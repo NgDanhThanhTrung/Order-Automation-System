@@ -63,6 +63,7 @@ Chào mừng bạn đến với documentation của Order Automation System. Tà
 ### Development:
 - [🔧 Local Setup](../DEPLOYMENT.md#--phase-1-local-development-setup) - Local development setup
 - [📝 Environment Variables](../DEPLOYMENT.md#12-configure-environment-variables) - Environment configuration
+- [🔧 Troubleshooting](TROUBLESHOOTING.md) - Debug and fix common issues
 
 ## 🤝 Community
 
@@ -107,7 +108,8 @@ Chào mừng bạn đến với documentation của Order Automation System. Tà
 
 ### Maintenance:
 - [🔄 Updates](../CHANGELOG.md) - Update information
-- [🔧 Troubleshooting](../DEPLOYMENT_GUIDES.md#-troubleshooting) - Common issues
+- [🔧 Troubleshooting](TROUBLESHOOTING.md) - Comprehensive troubleshooting guide
+- [🔧 Quick Fixes](../DEPLOYMENT_GUIDES.md#-troubleshooting) - Common deployment issues
 
 ## 🌐 Language Support
 
