@@ -18,17 +18,16 @@ ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lo
 **Solution:**
 
 #### Vercel:
-1. Đã có `vercel.json` trong repository với cấu hình:
+1. Đã có `vercel-build` script trong root package.json:
 ```json
-{
-  "buildCommand": "cd artifacts/storefront && pnpm install --no-frozen-lockfile && pnpm run build",
-  "installCommand": "pnpm install --no-frozen-lockfile"
-}
+"vercel-build": "pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build"
 ```
 
-2. Nếu vẫn gặp lỗi, override build command trong Project Settings:
+2. Đã loại bỏ `vercel.json` để tránh monorepo workspace complexity
+
+3. Nếu vẫn gặp lỗi, override build command trong Project Settings:
 ```
-cd artifacts/storefront && pnpm install --no-frozen-lockfile && pnpm run build
+pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build
 ```
 
 #### Render:
@@ -71,6 +70,38 @@ pnpm install
 # Hoặc với --no-frozen-lockfile
 pnpm install --no-frozen-lockfile
 ```
+
+---
+
+### ❌ "No such file or directory" Error (Monorepo)
+
+**Problem:**
+```
+sh: line 1: cd: artifacts/storefront: No such file or directory
+```
+
+**Cause:**
+- Vercel không understand monorepo structure
+- Workspace filtering không work đúng
+- Build command cố gắng cd vào directory không tồn tại trong context
+
+**Solution:**
+
+1. Đã fix bằng cách sử dụng script đơn giản trong package.json:
+```json
+"vercel-build": "pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build"
+```
+
+2. Đã loại bỏ `vercel.json` để tránh workspace complexity
+
+3. Nếu vẫn gặp lỗi, vào Project Settings → Build & Development:
+```
+Root Directory: ./
+Build Command: pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build
+Output Directory: artifacts/storefront/dist
+```
+
+4. Alternative: Deploy frontend separately trong own repository
 
 ---
 
@@ -344,6 +375,18 @@ netstat -tulpn | grep :5000
 - Verify variable names có prefix `VITE_PUBLIC_`
 - Re-deploy sau khi add environment variables
 - Check `.env.example` cho reference
+
+#### Monorepo Build Issues
+**Problem:** Build fails due to monorepo structure
+```
+Error: Cannot find module or workspace dependencies
+```
+
+**Solution:**
+- Use simple build script instead of workspace filtering
+- Set Root Directory to `./` instead of subdirectory
+- Use `vercel-build` script with manual cd command
+- Consider separating frontend into own repository for simpler deployment
 
 ### Render
 

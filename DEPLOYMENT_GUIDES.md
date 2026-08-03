@@ -195,9 +195,10 @@ VITE_PUBLIC_BANK_ACCOUNT_NAME=NGUYEN DANH THANH TRUNG
 | Output Directory | `artifacts/storefront/dist` |
 
 **⚠️ Lưu ý quan trọng:**
-- Đã có file `vercel.json` trong repository để handle pnpm lockfile issues
-- Build command sẽ tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
+- Build command sử dụng script đơn giản: `pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build`
+- Script này tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
 - Framework để `Other` hoặc `null` để tránh auto-detection issues
+- Đã loại bỏ `vercel.json` để tránh monorepo workspace complexity
 
 2. **Add Environment Variables**
 
