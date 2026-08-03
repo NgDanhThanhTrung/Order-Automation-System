@@ -208,11 +208,14 @@ Access admin reports via Telegram bot commands or API endpoints:
 
 ## 📚 Documentation
 
+- [� Quick Start Guide](QUICK_START.md) - Deploy in 15 minutes (recommended for beginners)
+- [📖 Deployment Guides](DEPLOYMENT_GUIDES.md) - Comprehensive deployment instructions for multiple platforms
+- [🚀 Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Production deployment checklist
 - [📖 Webhook Test Guide](WEBHOOK_TEST_GUIDE.md) - Comprehensive webhook testing guide
-- [🚀 Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Production deployment steps
 - [📝 Changelog](CHANGELOG.md) - Version history and changes
 - [🏦 Bank Info Update](BANK_INFO_UPDATE.md) - Bank account configuration
 - [📋 API Documentation](http://localhost:5000/api/docs) - Interactive API docs (Swagger)
+- [🤝 Contributing Guide](CONTRIBUTING.md) - How to contribute to the project
 
 ## 🔐 Security Features
 
