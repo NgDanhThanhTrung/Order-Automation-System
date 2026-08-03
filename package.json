@@ -7,7 +7,7 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "vercel-build": "cd artifacts/storefront && pnpm install --no-frozen-lockfile && pnpm run build",
+    "vercel-build": "pnpm install --no-frozen-lockfile && cd artifacts/storefront && pnpm run build",
     "update-lockfile": "pnpm install"
   },
   "private": true,
