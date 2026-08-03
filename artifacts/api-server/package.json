@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
+    "build": "node ./build.mjs && node -e \"import('fs').then(fs => fs.copyFileSync('swagger.json', 'dist/swagger.json')).catch(() => {})\"",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "render-build": "pnpm install --no-frozen-lockfile && pnpm run build"
