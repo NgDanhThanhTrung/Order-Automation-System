@@ -98,10 +98,15 @@ CRON_ENABLED=true
 
 | Setting | Value |
 |---------|-------|
-| Framework Preset | `Vite` |
-| Root Directory | `artifacts/storefront` |
-| Build Command | `pnpm install && pnpm run build` |
-| Output Directory | `dist` |
+| Framework Preset | `Other` (không chọn Vite) |
+| Root Directory | `./` (root directory) |
+| Build Command | `pnpm run vercel-build` (sử dụng script trong package.json) |
+| Output Directory | `artifacts/storefront/dist` |
+
+**⚠️ Lưu ý quan trọng:**
+- Đã có file `vercel.json` trong repository để handle pnpm lockfile issues
+- Build command sẽ tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
+- Framework để `Other` hoặc `null` để tránh auto-detection issues
 
 3. **Add Environment Variables**
 
@@ -118,6 +123,13 @@ VITE_PUBLIC_BANK_ACCOUNT_NAME=NGUYEN DANH THANH TRUNG
    - Click **Deploy**
    - Chờ 1-2 phút
    - Lưu URL: `https://your-project.vercel.app`
+
+**🔧 Nếu gặp lỗi lockfile:**
+- Vercel sẽ tự động sử dụng `--no-frozen-lockfile` nhờ cấu hình trong `vercel.json`
+- Nếu vẫn gặp lỗi, vào Project Settings → Build & Development → Override Build Command:
+  ```
+  cd artifacts/storefront && pnpm install --no-frozen-lockfile && pnpm run build
+  ```
 
 ### Bước 3: Configure External Services (5 phút)
 
