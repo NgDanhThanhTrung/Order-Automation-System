@@ -53,9 +53,14 @@ Hướng dẫn nhanh để deploy Order Automation System lên production trong 
 | Environment | `Node` |
 | Region | `Singapore` |
 | Branch | `main` |
-| Build Command | `cd artifacts/api-server && pnpm install && pnpm run build` |
+| Build Command | `cd artifacts/api-server && pnpm run render-build` |
 | Start Command | `cd artifacts/api-server && pnpm run start` |
 | Health Check Path | `/api/healthz` |
+
+**⚠️ Lưu ý quan trọng:**
+- Build command sử dụng `render-build` script để handle pnpm lockfile issues
+- Script này tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
+- Nếu vẫn gặp lỗi, override build command: `cd artifacts/api-server && pnpm install --no-frozen-lockfile && pnpm run build`
 
 3. **Add Environment Variables**
    Copy từ `.env.example` và fill trong:

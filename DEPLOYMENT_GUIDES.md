@@ -81,9 +81,14 @@ Có thể deploy:
 | Environment | `Node` |
 | Region | `Singapore` (hoặc gần VN nhất) |
 | Branch | `main` |
-| Build Command | `cd artifacts/api-server && pnpm install && pnpm run build` |
+| Build Command | `cd artifacts/api-server && pnpm run render-build` |
 | Start Command | `cd artifacts/api-server && pnpm run start` |
 | Health Check Path | `/api/healthz` |
+
+**⚠️ Lưu ý quan trọng:**
+- Build command sử dụng `render-build` script để handle pnpm lockfile issues
+- Script này tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
+- Nếu vẫn gặp lỗi, override build command: `cd artifacts/api-server && pnpm install --no-frozen-lockfile && pnpm run build`
 
 2. **Add Environment Variables**
 
@@ -137,8 +142,13 @@ CRON_ENABLED=true
 |---------|-------|
 | Name | `order-automation-frontend` |
 | Root Directory | `artifacts/storefront` |
-| Build Command | `pnpm install && pnpm run build` |
+| Build Command | `pnpm run render-build` |
 | Publish Directory | `dist` |
+
+**⚠️ Lưu ý quan trọng:**
+- Build command sử dụng `render-build` script để handle pnpm lockfile issues
+- Script này tự động sử dụng `--no-frozen-lockfile` để tránh lỗi lockfile
+- Nếu vẫn gặp lỗi, override build command: `pnpm install --no-frozen-lockfile && pnpm run build`
 
 2. **Add Environment Variables**
 
